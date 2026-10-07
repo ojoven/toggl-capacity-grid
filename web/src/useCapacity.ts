@@ -1,5 +1,11 @@
 import { useCallback, useState } from 'react'
-import { keepPreviousData, useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { ApiError, fetchCapacity, updateWeeklyHours, type CapacityPage } from './api'
 import { withPerson } from './capacity'
 import type { WeekRange } from './dates'
@@ -40,12 +46,7 @@ export function useWeeklyHoursEditor() {
           { queryKey: capacityKey },
           (data) => data && withPerson(data, person),
         )
-        // A range that was loading during the save may have read the old
-        // value and would overwrite the one just written. Start it again.
-        void queryClient.refetchQueries({
-          queryKey: capacityKey,
-          predicate: (query) => query.state.fetchStatus === 'fetching',
-        })
+        await restartInFlight(queryClient)
         setEdits((current) => without(current, personId))
       } catch (err) {
         const error = err instanceof ApiError ? err : new ApiError('Could not save. Try again.', null)
@@ -60,6 +61,21 @@ export function useWeeklyHoursEditor() {
   }, [])
 
   return { edits, save, dismiss }
+}
+
+// A range that was loading while the save ran may have read the old value,
+// and would land on top of the one just written. Cancel it and load it again.
+//
+// refetchQueries alone is not enough: it only cancels a fetch for a query that
+// already has data. A range's first load (the manager moved to a new week
+// mid-save) would be joined, not restarted, and show the old capacity.
+async function restartInFlight(queryClient: QueryClient) {
+  const inFlight = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: capacityKey, predicate: (query) => query.state.fetchStatus === 'fetching' })
+  if (inFlight.length === 0) return
+  await queryClient.cancelQueries({ queryKey: capacityKey, predicate: (query) => inFlight.includes(query) })
+  void queryClient.invalidateQueries({ queryKey: capacityKey, predicate: (query) => inFlight.includes(query) })
 }
 
 function without<K, V>(map: ReadonlyMap<K, V>, key: K): ReadonlyMap<K, V> {
