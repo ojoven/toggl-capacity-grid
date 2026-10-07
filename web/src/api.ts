@@ -50,16 +50,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => null)
-    const message =
-      body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
-        ? body.error
-        : res.status >= 500
-          ? "Couldn't reach the server. Try again in a moment."
-          : `Request failed (${res.status}).`
-    throw new ApiError(message, res.status)
+    throw new ApiError(await errorMessage(res), res.status)
   }
   return res.json() as Promise<T>
+}
+
+// 4xx messages come from the API and say what to fix. 5xx ones are worded
+// here: the caller already says what failed ("Couldn't save 40 h/wk.").
+async function errorMessage(res: Response): Promise<string> {
+  if ([502, 503, 504].includes(res.status)) return "Couldn't reach the server. Try again in a moment."
+  if (res.status >= 500) return 'Something went wrong on the server. Try again in a moment.'
+  const body: unknown = await res.json().catch(() => null)
+  return body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+    ? body.error
+    : `Request failed (${res.status}).`
 }
 
 export function fetchCapacity(params: {
