@@ -1,32 +1,477 @@
 :root {
   color-scheme: light dark;
   font-family: ui-sans-serif, system-ui, sans-serif;
+
+  --bg: #ffffff;
+  --fg: #1c1f24;
+  --muted: #6b7280;
+  --line: #e3e5e8;
+  --header-bg: #f6f7f9;
+  --accent: #5b4bd5;
+
+  --under-bg: transparent;
+  --under-fg: #1c1f24;
+  --under-meter: #8fa3bf;
+  --full-bg: #e7f6ec;
+  --full-fg: #17663a;
+  --full-meter: #2f9e5c;
+  --over-bg: #fde8e6;
+  --over-fg: #b42318;
+  --over-meter: #d92d20;
+  --error-bg: #fef3f2;
+  --error-line: #f5b5ae;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171b;
+    --fg: #e7e9ec;
+    --muted: #9aa1ab;
+    --line: #2c3036;
+    --header-bg: #1c1f24;
+    --accent: #a99cff;
+
+    --under-fg: #e7e9ec;
+    --under-meter: #5d6d85;
+    --full-bg: rgb(47 158 92 / 0.18);
+    --full-fg: #86dba6;
+    --full-meter: #3fb874;
+    --over-bg: rgb(240 68 56 / 0.24);
+    --over-fg: #ffa59c;
+    --over-meter: #f0443a;
+    --error-bg: rgb(240 68 56 / 0.12);
+    --error-line: rgb(240 68 56 / 0.45);
+  }
 }
 
 body {
   margin: 0;
-  padding: 2rem;
+  padding: 1.5rem 2rem;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 h1 {
   font-size: 1.4rem;
-  margin: 0 0 0.25rem;
+  margin: 0 0 1rem;
 }
 
-.range {
-  margin: 0 0 1.5rem;
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--header-bg);
+  color: inherit;
+  padding: 0.3rem 0.65rem;
+}
+
+button:disabled {
+  cursor: default;
   opacity: 0.6;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Range controls */
+
+.range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.range-step {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.date-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.date-field input {
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.range-summary {
+  margin: 0;
   font-variant-numeric: tabular-nums;
 }
 
-table {
-  border-collapse: collapse;
+.range-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Toolbar */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+}
+
+.swatch.load-under {
+  background: var(--under-meter);
+}
+
+.status {
+  margin: 0 0 0 auto;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
-th,
-td {
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-  padding: 0.5rem 0.75rem;
+/* Grid */
+
+.scroller {
+  overflow: auto;
+  max-height: calc(100vh - 13rem);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition: opacity 120ms;
+}
+
+.scroller.stale {
+  opacity: 0.55;
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+.grid th,
+.grid td {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 0.4rem 0.6rem;
   text-align: left;
+  vertical-align: top;
+  background: var(--bg);
+}
+
+.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--header-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Name and capacity stay put while the weeks scroll sideways. */
+.grid .col-name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 12rem;
+  min-width: 12rem;
+  max-width: 12rem;
+  font-weight: 500;
+}
+
+.grid .col-hours {
+  position: sticky;
+  left: 12rem;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 11rem;
+  min-width: 11rem;
+  max-width: 11rem;
+  box-shadow: 1px 0 0 var(--line);
+}
+
+.grid thead .col-name,
+.grid thead .col-hours {
+  z-index: 3;
+}
+
+.col-week {
+  min-width: 5.5rem;
+}
+
+.col-week.current {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.week-date {
+  display: block;
+}
+
+.week-number {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Week cells */
+
+.cell {
+  position: relative;
+  min-width: 5.5rem;
+}
+
+.cell.current {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 35%, transparent),
+    inset -2px 0 0 color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.hours-allocated {
+  display: block;
+  font-weight: 600;
+}
+
+.percent,
+.weekend {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.meter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+}
+
+.grid td.load-none .hours-allocated {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.grid td.load-under {
+  background: var(--under-bg);
+  color: var(--under-fg);
+}
+
+.load-under .meter {
+  background: var(--under-meter);
+}
+
+.grid td.load-full,
+.swatch.load-full {
+  background: var(--full-bg);
+}
+
+.load-full .hours-allocated {
+  color: var(--full-fg);
+}
+
+.load-full .meter {
+  background: var(--full-meter);
+}
+
+.grid td.load-over,
+.swatch.load-over {
+  background: var(--over-bg);
+}
+
+.load-over .hours-allocated,
+.load-over .percent {
+  color: var(--over-fg);
+  font-weight: 700;
+}
+
+.load-over .meter {
+  background: var(--over-meter);
+}
+
+/* Weekly hours editor */
+
+.hours-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-color: transparent;
+  background: transparent;
+  padding: 0.15rem 0.4rem;
+  margin-left: -0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hours-value:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--header-bg);
+}
+
+.pencil::before {
+  content: '✎';
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.spinner {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hours-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.hours-input {
+  width: 4rem;
+  font: inherit;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.hours-input[aria-invalid='true'] {
+  border-color: var(--over-meter);
+}
+
+.hours-form button,
+.save-error button {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.field-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--over-fg);
+}
+
+.save-error {
+  margin-top: 0.3rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--error-line);
+  border-radius: 6px;
+  background: var(--error-bg);
+  font-size: 0.8rem;
+  white-space: normal;
+}
+
+.save-error-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+}
+
+/* Panels: loading, empty, errors */
+
+.panel {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.panel p {
+  margin: 0 0 0.5rem;
+}
+
+.panel-error {
+  border-color: var(--error-line);
+  background: var(--error-bg);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+}
+
+.more p {
+  margin: 0;
+  color: var(--over-fg);
+}
+
+.skeleton .bar {
+  display: block;
+  height: 0.9rem;
+  border-radius: 4px;
+  background: var(--line);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .skeleton .bar {
+    animation: none;
+  }
 }
