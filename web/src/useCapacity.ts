@@ -50,6 +50,12 @@ export function useWeeklyHoursEditor() {
         setEdits((current) => without(current, personId))
       } catch (err) {
         const error = err instanceof ApiError ? err : new ApiError('Could not save. Try again.', null)
+        if (error.status === null) {
+          // No response, so the save may have landed anyway. Don't guess:
+          // reload ranges from the server the next time they're shown.
+          // (Retrying is safe; the PATCH sets an absolute value.)
+          void queryClient.invalidateQueries({ queryKey: capacityKey, refetchType: 'none' })
+        }
         setEdits((current) => new Map(current).set(personId, { status: 'failed', hours, error }))
       }
     },

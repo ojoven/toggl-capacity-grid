@@ -25,7 +25,7 @@ export type Person = {
 }
 
 export class ApiError extends Error {
-  // null when the request never got a response.
+  // null when no response arrived: the request may or may not have been applied.
   readonly status: number | null
 
   constructor(message: string, status: number | null) {
@@ -40,12 +40,20 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Without a limit a hung request leaves "Saving…" on screen indefinitely.
+const TIMEOUT_MS = 15_000
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const timeout = AbortSignal.timeout(TIMEOUT_MS)
+  const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout
+
   let res: Response
   try {
-    res = await fetch(path, init)
+    res = await fetch(path, { ...init, signal })
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    // The caller cancelled (e.g. the manager moved on to another range).
+    if (init.signal?.aborted) throw err
+    if (timeout.aborted) throw new ApiError('The server took too long to respond. Try again.', null)
     throw new ApiError("Couldn't reach the server. Check your connection and try again.", null)
   }
 
