@@ -137,6 +137,11 @@ func TestCapacityPagesCoverRosterOnce(t *testing.T) {
 			}
 			seen[p.ID] = true
 		}
+		for i := 1; i < len(res.People); i++ {
+			if a, b := res.People[i-1].Name, res.People[i].Name; a == "Fatima Yilmaz" && b == "Fatima Öztürk" {
+				t.Errorf("names sorted by bytes: %q before %q", a, b)
+			}
+		}
 		if res.NextCursor == nil {
 			if len(seen) != res.Total {
 				t.Fatalf("paged through %d people, total says %d", len(seen), res.Total)

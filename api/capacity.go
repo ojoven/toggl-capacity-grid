@@ -31,6 +31,9 @@ const (
 // that week. Because a clipped span never crosses a Monday, its weekday count
 // is a plain isodow subtraction instead of a day-by-day expansion.
 //
+// Names sort with the ICU root collation. The database's libc collation is a
+// no-op on Alpine (musl), which sorts by bytes: "Öztürk" after "Yilmaz".
+//
 // Assignments are summed as stored. The seed splits a single allocation into
 // many identical-looking rows (14 x 0.5h + 1 x 1h = 8h/day); they are slices,
 // not duplicates, and must not be de-duplicated.
@@ -38,8 +41,9 @@ const capacityQuery = `
 WITH page AS (
   SELECT id, name, weekly_hours
   FROM people
-  WHERE $3::text IS NULL OR (name, id) > ($3::text, $4::int)
-  ORDER BY name, id
+  WHERE $3::text IS NULL
+     OR (name COLLATE "und-x-icu", id) > ($3::text COLLATE "und-x-icu", $4::int)
+  ORDER BY name COLLATE "und-x-icu", id
   LIMIT $5
 ),
 alloc AS (
@@ -71,7 +75,7 @@ FROM page p
 CROSS JOIN generate_series(0, $2::int - 1) AS w(i)
 LEFT JOIN alloc al ON al.person_id = p.id AND al.i = w.i
 GROUP BY p.id, p.name, p.weekly_hours
-ORDER BY p.name, p.id`
+ORDER BY p.name COLLATE "und-x-icu", p.id`
 
 type capacityResponse struct {
 	From       string           `json:"from"`  // Monday of the first week
