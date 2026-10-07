@@ -1,4 +1,5 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { CapacityPerson } from './api'
 import { allocatedHours, formatHours, loadOf, utilisation, type Load } from './capacity'
 import { formatDate, formatDayMonth, isoWeekNumber, mondayOf, today, weekStarts, type ISODate } from './dates'
@@ -23,6 +24,13 @@ export function CapacityGrid({ from, to }: Props) {
   const { edits, save, dismiss } = useWeeklyHoursEditor()
   const [includeWeekends, setIncludeWeekends] = useState(false)
 
+  // After a failed page, wait for the manager to press "Try again" rather
+  // than retrying on every scroll.
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, isPlaceholderData, fetchNextPage } = query
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError && !isPlaceholderData) void fetchNextPage()
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, isPlaceholderData, fetchNextPage])
+
   if (query.isPending) {
     return <GridSkeleton weeks={weekStarts(range)} />
   }
@@ -44,7 +52,6 @@ export function CapacityGrid({ from, to }: Props) {
   const weeks = pages[0].weeks
   const people = pages.flatMap((page) => page.people)
   const total = pages[pages.length - 1].total
-  const currentWeek = weeks.indexOf(mondayOf(today()))
   const switchingRange = query.isPlaceholderData
 
   return (
@@ -62,7 +69,9 @@ export function CapacityGrid({ from, to }: Props) {
         <span className="status" role="status">
           {switchingRange
             ? `Loading ${formatDate(from)} – ${formatDate(to)}…`
-            : `${people.length} of ${total} people`}
+            : people.length < total
+              ? `${people.length} of ${total} people loaded · scroll for more`
+              : `${total} people`}
         </span>
       </div>
 
@@ -75,57 +84,28 @@ export function CapacityGrid({ from, to }: Props) {
         </div>
       )}
 
-      <div className={switchingRange ? 'scroller stale' : 'scroller'}>
-        <table className="grid">
-          <thead>
-            <tr>
-              <th scope="col" className="col-name">
-                Person
-              </th>
-              <th scope="col" className="col-hours">
-                Capacity
-              </th>
-              {weeks.map((week, i) => (
-                <th key={week} scope="col" className={i === currentWeek ? 'col-week current' : 'col-week'}>
-                  <span className="week-date">{formatDayMonth(week)}</span>
-                  <span className="week-number">W{isoWeekNumber(week)}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {people.map((person) => (
-              <PersonRow
-                key={person.id}
-                person={person}
-                weeks={weeks}
-                currentWeek={currentWeek}
-                includeWeekends={includeWeekends}
-                edit={edits.get(person.id)}
-                onSave={save}
-                onDismiss={dismiss}
-              />
-            ))}
-          </tbody>
-        </table>
-        {people.length === 0 && <p className="panel">Nobody is on this team yet.</p>}
-      </div>
+      <CapacityTable
+        people={people}
+        weeks={weeks}
+        total={total}
+        stale={switchingRange}
+        includeWeekends={includeWeekends}
+        edits={edits}
+        onSave={save}
+        onDismiss={dismiss}
+        onNearEnd={loadMore}
+      />
 
-      {query.hasNextPage && (
-        <div className="more">
-          {query.isFetchNextPageError && (
-            <p role="alert">Couldn’t load more people. {query.error?.message}</p>
-          )}
-          <button
-            type="button"
-            disabled={query.isFetchingNextPage || switchingRange}
-            onClick={() => void query.fetchNextPage()}
-          >
-            {query.isFetchingNextPage
-              ? 'Loading…'
-              : query.isFetchNextPageError
-                ? 'Try again'
-                : `Show more people (${people.length} of ${total})`}
+      {query.isFetchingNextPage && (
+        <p className="more" role="status">
+          Loading more people…
+        </p>
+      )}
+      {query.isFetchNextPageError && (
+        <div className="more" role="alert">
+          <p>Couldn’t load more people. {query.error?.message}</p>
+          <button type="button" onClick={() => void query.fetchNextPage()}>
+            Try again
           </button>
         </div>
       )}
@@ -133,7 +113,91 @@ export function CapacityGrid({ from, to }: Props) {
   )
 }
 
+type TableProps = {
+  people: CapacityPerson[]
+  weeks: ISODate[]
+  total: number
+  stale: boolean
+  includeWeekends: boolean
+  edits: ReadonlyMap<number, Edit>
+  onSave: (personId: number, hours: number) => void
+  onDismiss: (personId: number) => void
+  onNearEnd: () => void
+}
+
+// Only the rows near the viewport are rendered: a full roster over two years
+// is tens of thousands of cells, and rendering them all made the weekend
+// toggle take ~4s at 500 people. Every week column is still rendered.
+function CapacityTable({ people, weeks, total, stale, includeWeekends, edits, onSave, onDismiss, onNearEnd }: TableProps) {
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: people.length,
+    getScrollElement: () => scrollerRef.current,
+    estimateSize: () => 56,
+    overscan: 10,
+    getItemKey: (index) => people[index].id,
+  })
+  const rows = virtualizer.getVirtualItems()
+  const padTop = rows.length > 0 ? rows[0].start : 0
+  const padBottom = rows.length > 0 ? virtualizer.getTotalSize() - rows[rows.length - 1].end : 0
+
+  // Load the next page before the manager reaches the end of this one.
+  const lastRendered = rows.length > 0 ? rows[rows.length - 1].index : -1
+  useEffect(() => {
+    if (lastRendered >= people.length - 30) onNearEnd()
+  }, [lastRendered, people.length, onNearEnd])
+
+  const currentWeek = weeks.indexOf(mondayOf(today()))
+
+  return (
+    <div ref={scrollerRef} className={stale ? 'scroller stale' : 'scroller'}>
+      <table className="grid" aria-rowcount={total + 1}>
+        <thead>
+          <tr aria-rowindex={1}>
+            <th scope="col" className="col-name">
+              Person
+            </th>
+            <th scope="col" className="col-hours">
+              Capacity
+            </th>
+            {weeks.map((week, i) => (
+              <th key={week} scope="col" className={i === currentWeek ? 'col-week current' : 'col-week'}>
+                <span className="week-date">{formatDayMonth(week)}</span>
+                <span className="week-number">W{isoWeekNumber(week)}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {padTop > 0 && <tr aria-hidden="true" style={{ height: padTop }} />}
+          {rows.map((row) => {
+            const person = people[row.index]
+            return (
+              <PersonRow
+                key={person.id}
+                index={row.index}
+                measureRef={virtualizer.measureElement}
+                person={person}
+                weeks={weeks}
+                currentWeek={currentWeek}
+                includeWeekends={includeWeekends}
+                edit={edits.get(person.id)}
+                onSave={onSave}
+                onDismiss={onDismiss}
+              />
+            )
+          })}
+          {padBottom > 0 && <tr aria-hidden="true" style={{ height: padBottom }} />}
+        </tbody>
+      </table>
+      {people.length === 0 && <p className="panel">Nobody is on this team yet.</p>}
+    </div>
+  )
+}
+
 type RowProps = {
+  index: number
+  measureRef: (row: HTMLTableRowElement | null) => void
   person: CapacityPerson
   weeks: ISODate[]
   currentWeek: number
@@ -144,6 +208,8 @@ type RowProps = {
 }
 
 const PersonRow = memo(function PersonRow({
+  index,
+  measureRef,
   person,
   weeks,
   currentWeek,
@@ -156,7 +222,7 @@ const PersonRow = memo(function PersonRow({
   const capacity = edit?.status === 'saving' ? edit.hours : person.weekly_hours
 
   return (
-    <tr>
+    <tr ref={measureRef} data-index={index} aria-rowindex={index + 2}>
       <th scope="row" className="col-name">
         <span dir="auto">{person.name}</span>
       </th>

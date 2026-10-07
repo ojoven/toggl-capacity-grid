@@ -446,7 +446,8 @@ input:focus-visible {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-top: 0.75rem;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
 }
 
 .more p {
